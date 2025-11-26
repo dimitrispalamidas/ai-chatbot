@@ -97,7 +97,6 @@ ${context}`,
       model: openai('gpt-4o-mini'),
       messages: allMessages as any,
       temperature: 0.7,
-      maxTokens: 1000,
     });
 
     return result.toTextStreamResponse();
