@@ -102,7 +102,7 @@ export default function DocumentUploader({ documents, onUploadComplete }: Docume
             type="file"
             onChange={handleFileUpload}
             disabled={uploading}
-            accept=".txt,.md,.json,.html"
+            accept=".txt,.md,.json,.html,.pdf,.doc,.docx,.xml"
             className="hidden"
           />
           <div className="flex items-center justify-center w-full h-32 px-4 transition bg-white dark:bg-zinc-900 border-2 border-zinc-300 dark:border-zinc-700 border-dashed rounded-lg appearance-none cursor-pointer hover:border-blue-500 focus:outline-none">
@@ -130,7 +130,7 @@ export default function DocumentUploader({ documents, onUploadComplete }: Docume
                     Κλικ για ανέβασμα
                   </span>
                   <p className="text-xs text-zinc-500 mt-1">
-                    TXT, MD, JSON, HTML
+                    TXT, MD, JSON, HTML, PDF, DOC, DOCX, XML
                   </p>
                 </>
               )}

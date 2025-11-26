@@ -12,8 +12,10 @@
     "@ai-sdk/openai": "^2.0.72",
     "@supabase/supabase-js": "^2.84.0",
     "ai": "^5.0.102",
+    "mammoth": "^1.11.0",
     "next": "16.0.4",
     "openai": "^6.9.1",
+    "pdf-parse": "^2.4.5",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "zod": "^4.1.13"
@@ -21,6 +23,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pdf-parse": "^1.1.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

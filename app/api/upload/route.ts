@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/client';
 import { generateEmbeddings } from '@/lib/openai/embeddings';
-import { chunkText, extractTextFromFile } from '@/utils/text-chunking';
+import { chunkText, extractTextFromFile, isBinaryFileType, getFileTypeFromName } from '@/utils/text-chunking';
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,9 +16,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Read file content
-    const fileContent = await file.text();
-    const extractedText = extractTextFromFile(fileContent, file.type);
+    // Read file content - handle binary files
+    let extractedText: string;
+    const fileType = file.type || getFileTypeFromName(file.name);
+    
+    if (isBinaryFileType(fileType)) {
+      const arrayBuffer = await file.arrayBuffer();
+      extractedText = await extractTextFromFile(arrayBuffer, fileType, file.name);
+    } else {
+      const fileContent = await file.text();
+      extractedText = await extractTextFromFile(fileContent, fileType, file.name);
+    }
 
     // Insert document
     const { data: document, error: docError } = await supabaseAdmin
@@ -29,7 +37,7 @@ export async function POST(request: NextRequest) {
         filename: file.name,
         file_path: `/uploads/${userId}/${file.name}`,
         content: extractedText,
-        file_type: file.type,
+        file_type: fileType,
         file_size: file.size,
         status: 'completed',
       })

@@ -1,3 +1,5 @@
+import mammoth from 'mammoth';
+
 export interface TextChunk {
   content: string;
   index: number;
@@ -66,22 +68,121 @@ export function chunkText(
   return chunks;
 }
 
-export function extractTextFromFile(content: string, fileType: string): string {
-  // For now, we'll handle text files directly
-  // You can extend this to handle PDFs, DOCs, etc.
+export function isBinaryFileType(fileType: string): boolean {
+  return (
+    fileType === 'application/pdf' ||
+    fileType === 'application/msword' ||
+    fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    fileType.startsWith('application/vnd.ms-word')
+  );
+}
+
+export function getFileTypeFromName(filename: string): string {
+  const ext = filename.toLowerCase().split('.').pop();
+  switch (ext) {
+    case 'pdf':
+      return 'application/pdf';
+    case 'doc':
+      return 'application/msword';
+    case 'docx':
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    case 'xml':
+      return 'application/xml';
+    case 'txt':
+      return 'text/plain';
+    case 'md':
+      return 'text/markdown';
+    case 'json':
+      return 'application/json';
+    case 'html':
+    case 'htm':
+      return 'text/html';
+    default:
+      return 'text/plain';
+  }
+}
+
+export async function extractTextFromFile(
+  content: string | ArrayBuffer,
+  fileType: string,
+  filename?: string
+): Promise<string> {
+  // Handle binary files (PDF, Word)
+  if (content instanceof ArrayBuffer) {
+    const buffer = Buffer.from(content);
+    
+    if (fileType === 'application/pdf' || filename?.toLowerCase().endsWith('.pdf')) {
+      try {
+        // Use require for server-side PDF parsing (Next.js API routes run in Node.js)
+        const pdfParse = require('pdf-parse');
+        const data = await pdfParse(buffer);
+        return data.text;
+      } catch (error) {
+        console.error('Error parsing PDF:', error);
+        throw new Error('Failed to parse PDF file');
+      }
+    }
+    
+    if (
+      fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      filename?.toLowerCase().endsWith('.docx')
+    ) {
+      try {
+        const result = await mammoth.extractRawText({ buffer });
+        return result.value;
+      } catch (error) {
+        console.error('Error parsing Word document:', error);
+        throw new Error('Failed to parse Word document');
+      }
+    }
+    
+    // Old .doc format is not supported by mammoth
+    if (fileType === 'application/msword' || filename?.toLowerCase().endsWith('.doc')) {
+      throw new Error('Old Word format (.doc) is not supported. Please convert to .docx format.');
+    }
+    
+    throw new Error('Unsupported binary file type');
+  }
+  
+  // Handle text files
+  const textContent = content as string;
   
   switch (fileType) {
     case 'text/plain':
     case 'text/markdown':
     case 'application/json':
-      return content;
+      return textContent;
     
     case 'text/html':
       // Basic HTML tag removal
-      return content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      return textContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    
+    case 'application/xml':
+    case 'text/xml':
+      // Parse XML and extract text content
+      try {
+        // Remove XML tags and extract text
+        return textContent
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/<!--[\s\S]*?-->/g, ' ') // Remove comments
+          .replace(/\s+/g, ' ')
+          .trim();
+      } catch (error) {
+        console.error('Error parsing XML:', error);
+        // Fallback to basic tag removal
+        return textContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      }
     
     default:
-      return content;
+      // Try to detect XML by content
+      if (textContent.trim().startsWith('<?xml') || textContent.trim().startsWith('<')) {
+        return textContent
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/<!--[\s\S]*?-->/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+      return textContent;
   }
 }
 
