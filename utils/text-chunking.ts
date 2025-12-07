@@ -1,5 +1,14 @@
 import * as mammoth from 'mammoth';
-import { PDFParse } from 'pdf-parse';
+
+// Lazy load pdf-parse to handle CommonJS module in Next.js
+let pdfParseModule: any = null;
+const getPdfParse = () => {
+  if (!pdfParseModule) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    pdfParseModule = require('pdf-parse');
+  }
+  return pdfParseModule;
+};
 
 export interface TextChunk {
   content: string;
@@ -110,22 +119,20 @@ export function getFileTypeFromName(filename: string): string {
 }
 
 /**
- * PDF text extraction using pdf-parse (Node.js compatible)
- * Simple, reliable, and works perfectly with Next.js API routes
- * No worker configuration needed - works directly with Buffer
+ * PDF text extraction using pdf-parse v1 (Node.js compatible)
+ * Works reliably in serverless environments like Vercel
  */
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
-  // Follow v2 README pattern: create parser, getText, always destroy
-  const parser = new PDFParse({ data: buffer });
   try {
-    const result = await parser.getText();
+    const pdfParse = getPdfParse();
+    const data = await pdfParse(buffer);
 
-    if (!result.text || result.text.trim().length === 0) {
+    if (!data.text || data.text.trim().length === 0) {
       throw new Error('No text could be extracted from PDF');
     }
 
     // Normalize whitespace
-    return result.text.replace(/\s+/g, ' ').trim();
+    return data.text.replace(/\s+/g, ' ').trim();
   } catch (error: any) {
     if (error?.message?.includes('password') || error?.message?.includes('encrypted')) {
       throw new Error('PDF is password-protected and cannot be processed');
@@ -147,13 +154,6 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
     throw new Error(
       `Failed to extract text from PDF: ${error?.message || 'Unknown error'}`
     );
-  } finally {
-    // Free worker / resources as in README examples
-    try {
-      await parser.destroy();
-    } catch {
-      // ignore destroy errors
-    }
   }
 }
 

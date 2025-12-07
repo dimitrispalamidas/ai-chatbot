@@ -3,9 +3,10 @@ import { supabaseAdmin } from '@/lib/supabase/client';
 import { generateEmbeddings } from '@/lib/openai/embeddings';
 import { chunkText, extractTextFromFile, isBinaryFileType, getFileTypeFromName } from '@/utils/text-chunking';
 
-// Configure route runtime
+// Configure route runtime and behavior
 export const runtime = 'nodejs';
 export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
@@ -188,6 +189,15 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    // Validate environment variables
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('Missing Supabase environment variables');
+      return NextResponse.json(
+        { error: 'Server configuration error: Missing Supabase credentials' },
+        { status: 500 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId') || 'anonymous';
     const documentId = searchParams.get('documentId');
@@ -201,21 +211,42 @@ export async function GET(request: NextRequest) {
         .eq('user_id', userId)
         .single();
 
-      if (error || !document) {
-        console.error('Error fetching document:', error);
+      if (error) {
+        console.error('Error fetching document:', {
+          error,
+          message: error?.message,
+          code: error?.code,
+          details: error?.details,
+          hint: error?.hint,
+        });
         return NextResponse.json(
-          { error: 'Failed to fetch document' },
+          { 
+            error: 'Failed to fetch document',
+            details: process.env.NODE_ENV === 'development' ? error?.message : undefined
+          },
           { status: 500 }
+        );
+      }
+
+      if (!document) {
+        return NextResponse.json(
+          { error: 'Document not found' },
+          { status: 404 }
         );
       }
 
       // Generate signed URL for file access (valid for 1 hour)
       let fileUrl = null;
       if (document.file_path) {
-        const { data: urlData } = await supabaseAdmin.storage
+        const { data: urlData, error: urlError } = await supabaseAdmin.storage
           .from('documents')
           .createSignedUrl(document.file_path, 3600);
-        fileUrl = urlData?.signedUrl || null;
+        
+        if (urlError) {
+          console.error('Error creating signed URL:', urlError);
+        } else {
+          fileUrl = urlData?.signedUrl || null;
+        }
       }
 
       return NextResponse.json({ 
@@ -234,18 +265,35 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching documents:', error);
+      console.error('Error fetching documents:', {
+        error,
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint,
+      });
       return NextResponse.json(
-        { error: 'Failed to fetch documents' },
+        { 
+          error: 'Failed to fetch documents',
+          details: process.env.NODE_ENV === 'development' ? error?.message : undefined
+        },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ documents });
-  } catch (error) {
-    console.error('Fetch error:', error);
+    return NextResponse.json({ documents: documents || [] });
+  } catch (error: any) {
+    console.error('Fetch error:', {
+      error,
+      message: error?.message,
+      stack: error?.stack,
+      name: error?.name,
+    });
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { 
+        error: 'Internal server error',
+        details: process.env.NODE_ENV === 'development' ? error?.message : undefined
+      },
       { status: 500 }
     );
   }
