@@ -13,11 +13,11 @@
     "@supabase/supabase-js": "^2.84.0",
     "ai": "^5.0.102",
     "mammoth": "^1.11.0",
-    "next": "16.0.4",
+    "next": "16.0.7",
     "openai": "^6.9.1",
     "pdf-parse": "^2.4.5",
-    "react": "19.2.0",
-    "react-dom": "19.2.0",
+    "react": "19.2.1",
+    "react-dom": "19.2.1",
     "zod": "^4.1.13"
   },
   "devDependencies": {
@@ -26,7 +26,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.0.4",
+    "eslint-config-next": "16.0.7",
     "tailwindcss": "^4",
     "typescript": "5.9.3"
   }
