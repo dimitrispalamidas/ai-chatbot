@@ -16,19 +16,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log('Upload started:', { filename: file.name, size: file.size, type: file.type });
+
     // Read file content - handle binary files
     let extractedText: string;
     const fileType = file.type || getFileTypeFromName(file.name);
     
-    if (isBinaryFileType(fileType)) {
-      const arrayBuffer = await file.arrayBuffer();
-      extractedText = await extractTextFromFile(arrayBuffer, fileType, file.name);
-    } else {
-      const fileContent = await file.text();
-      extractedText = await extractTextFromFile(fileContent, fileType, file.name);
+    try {
+      if (isBinaryFileType(fileType)) {
+        const arrayBuffer = await file.arrayBuffer();
+        console.log('Extracting text from binary file, buffer size:', arrayBuffer.byteLength);
+        extractedText = await extractTextFromFile(arrayBuffer, fileType, file.name);
+      } else {
+        const fileContent = await file.text();
+        console.log('Extracting text from text file, content length:', fileContent.length);
+        extractedText = await extractTextFromFile(fileContent, fileType, file.name);
+      }
+      console.log('Text extracted successfully, length:', extractedText.length);
+    } catch (extractError: any) {
+      console.error('Text extraction failed:', {
+        error: extractError,
+        message: extractError?.message,
+        stack: extractError?.stack,
+        filename: file.name,
+        fileType,
+      });
+      return NextResponse.json(
+        { error: `Failed to extract text: ${extractError?.message || 'Unknown error'}` },
+        { status: 500 }
+      );
     }
 
     // Insert document
+    console.log('Inserting document into database...');
     const { data: document, error: docError } = await supabaseAdmin
       .from('documents')
       .insert({
@@ -47,13 +67,16 @@ export async function POST(request: NextRequest) {
     if (docError || !document) {
       console.error('Error inserting document:', docError);
       return NextResponse.json(
-        { error: 'Failed to save document' },
+        { error: `Failed to save document: ${docError?.message || 'Unknown error'}` },
         { status: 500 }
       );
     }
+    console.log('Document inserted successfully:', document.id);
 
     // Create chunks
+    console.log('Creating text chunks...');
     const chunks = chunkText(extractedText);
+    console.log('Created', chunks.length, 'chunks');
     
     if (chunks.length === 0) {
       return NextResponse.json(
@@ -63,7 +86,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate embeddings for all chunks
+    console.log('Generating embeddings for', chunks.length, 'chunks...');
     const embeddings = await generateEmbeddings(chunks.map(c => c.content));
+    console.log('Generated', embeddings.length, 'embeddings');
 
     // Insert chunks with embeddings
     const chunksToInsert = chunks.map((chunk, idx) => ({
@@ -83,11 +108,12 @@ export async function POST(request: NextRequest) {
       // Clean up document if chunks fail
       await supabaseAdmin.from('documents').delete().eq('id', document.id);
       return NextResponse.json(
-        { error: 'Failed to process document chunks' },
+        { error: `Failed to process document chunks: ${chunkError?.message || 'Unknown error'}` },
         { status: 500 }
       );
     }
 
+    console.log('Upload completed successfully');
     return NextResponse.json({
       success: true,
       document: {
@@ -96,10 +122,14 @@ export async function POST(request: NextRequest) {
         chunksCount: chunks.length,
       },
     });
-  } catch (error) {
-    console.error('Upload error:', error);
+  } catch (error: any) {
+    console.error('Upload error:', {
+      error,
+      message: error?.message,
+      stack: error?.stack,
+    });
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: `Internal server error: ${error?.message || 'Unknown error'}` },
       { status: 500 }
     );
   }

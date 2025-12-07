@@ -1,4 +1,5 @@
 import mammoth from 'mammoth';
+import { PDFParse } from 'pdf-parse';
 
 export interface TextChunk {
   content: string;
@@ -57,11 +58,17 @@ export function chunkText(
     }
     
     // Move start index forward, accounting for overlap
+    const previousStartIndex = startIndex;
     startIndex = endIndex - overlap;
     
-    // Ensure we're making progress
-    if (startIndex <= chunks[chunks.length - 1]?.content.length) {
+    // Ensure we're making progress - if we didn't advance, skip the overlap
+    if (startIndex <= previousStartIndex) {
       startIndex = endIndex;
+    }
+    
+    // Safety check: if we're not making progress, break to avoid infinite loop
+    if (startIndex >= cleanText.length) {
+      break;
     }
   }
   
@@ -102,6 +109,54 @@ export function getFileTypeFromName(filename: string): string {
   }
 }
 
+/**
+ * PDF text extraction using pdf-parse (Node.js compatible)
+ * Simple, reliable, and works perfectly with Next.js API routes
+ * No worker configuration needed - works directly with Buffer
+ */
+async function extractTextFromPDF(buffer: Buffer): Promise<string> {
+  // Follow v2 README pattern: create parser, getText, always destroy
+  const parser = new PDFParse({ data: buffer });
+  try {
+    const result = await parser.getText();
+
+    if (!result.text || result.text.trim().length === 0) {
+      throw new Error('No text could be extracted from PDF');
+    }
+
+    // Normalize whitespace
+    return result.text.replace(/\s+/g, ' ').trim();
+  } catch (error: any) {
+    if (error?.message?.includes('password') || error?.message?.includes('encrypted')) {
+      throw new Error('PDF is password-protected and cannot be processed');
+    }
+
+    if (error?.message?.includes('Invalid PDF') || error?.message?.includes('corrupted')) {
+      throw new Error('Invalid or corrupted PDF file');
+    }
+
+    if (error?.message?.includes('Missing PDF') || error?.message?.includes('empty')) {
+      throw new Error('PDF file appears to be empty or corrupted');
+    }
+
+    console.error('PDF extraction error:', {
+      name: error?.name,
+      message: error?.message,
+    });
+
+    throw new Error(
+      `Failed to extract text from PDF: ${error?.message || 'Unknown error'}`
+    );
+  } finally {
+    // Free worker / resources as in README examples
+    try {
+      await parser.destroy();
+    } catch {
+      // ignore destroy errors
+    }
+  }
+}
+
 export async function extractTextFromFile(
   content: string | ArrayBuffer,
   fileType: string,
@@ -112,15 +167,7 @@ export async function extractTextFromFile(
     const buffer = Buffer.from(content);
     
     if (fileType === 'application/pdf' || filename?.toLowerCase().endsWith('.pdf')) {
-      try {
-        // Use require for server-side PDF parsing (Next.js API routes run in Node.js)
-        const pdfParse = require('pdf-parse');
-        const data = await pdfParse(buffer);
-        return data.text;
-      } catch (error) {
-        console.error('Error parsing PDF:', error);
-        throw new Error('Failed to parse PDF file');
-      }
+      return await extractTextFromPDF(buffer);
     }
     
     if (

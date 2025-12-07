@@ -26,8 +26,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  };
-
+  }
   useEffect(() => {
     fetchDocuments();
   }, []);

@@ -37,15 +37,33 @@ export default function DocumentUploader({ documents, onUploadComplete }: Docume
         body: formData,
       });
 
+      // Check if response is ok before trying to parse JSON
+      if (!response.ok) {
+        let errorMessage = 'Upload failed';
+        try {
+          const errorText = await response.text();
+          try {
+            const errorData = JSON.parse(errorText);
+            errorMessage = errorData.error || errorMessage;
+          } catch {
+            errorMessage = errorText || `Server error: ${response.status}`;
+          }
+        } catch {
+          errorMessage = `Server error: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+
       const data = await response.json();
 
-      if (!response.ok) {
+      if (!data.success) {
         throw new Error(data.error || 'Upload failed');
       }
 
       onUploadComplete();
       e.target.value = ''; // Reset input
     } catch (err) {
+      console.error('Upload error:', err);
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploading(false);
