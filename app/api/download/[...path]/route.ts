@@ -3,8 +3,10 @@ import { supabaseAdmin } from '@/lib/supabase/client';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { path: string[] } }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
+  // Await params to satisfy Next.js 16 type requirements
+  await params;
   try {
     const { searchParams } = new URL(request.url);
     const documentId = searchParams.get('documentId');
