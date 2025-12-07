@@ -10,19 +10,69 @@ async function retrieveRelevantChunks(query: string, topK: number = 10) {
     // Generate embedding for the query
     const queryEmbedding = await generateEmbedding(query);
 
-    // Use Supabase's vector similarity search
-    const { data, error } = await supabaseAdmin.rpc('match_document_chunks', {
+    // Use Supabase's vector similarity search with lower threshold for better Greek language retrieval
+    const { data: vectorResults, error: vectorError } = await supabaseAdmin.rpc('match_document_chunks', {
       query_embedding: queryEmbedding,
-      match_threshold: 0.35, // Balanced threshold - high enough to avoid irrelevant chunks
+      match_threshold: 0.30, // Lowered threshold to catch more relevant chunks, especially for Greek text
       match_count: topK,
     });
 
-    if (error) {
-      console.error('Error retrieving chunks:', error);
-      return [];
+    if (vectorError) {
+      console.error('Error retrieving chunks via vector search:', vectorError);
     }
 
-    return data || [];
+    // Extract keywords from query for fallback text search
+    const keywords = query
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(word => word.length > 3) // Filter out short words
+      .slice(0, 5); // Take top 5 keywords
+
+    // Fallback: keyword-based text search if vector search returns few results
+    let keywordResults: any[] = [];
+    if (!vectorResults || vectorResults.length < 3) {
+      try {
+        // Build ILIKE query for keyword search
+        const keywordConditions = keywords.map(keyword => `content ILIKE '%${keyword}%'`).join(' OR ');
+        
+        if (keywordConditions) {
+          const { data: textResults, error: textError } = await supabaseAdmin
+            .from('document_chunks')
+            .select('id, document_id, content')
+            .or(keywordConditions)
+            .limit(topK);
+
+          if (!textError && textResults) {
+            keywordResults = textResults.map((chunk: any) => ({
+              ...chunk,
+              similarity: 0.5, // Default similarity for keyword matches
+            }));
+          }
+        }
+      } catch (textSearchError) {
+        console.error('Error in keyword search:', textSearchError);
+      }
+    }
+
+    // Combine and deduplicate results
+    const allResults = [...(vectorResults || []), ...keywordResults];
+    const uniqueResults = new Map<string, any>();
+    
+    for (const result of allResults) {
+      const key = result.id;
+      if (!uniqueResults.has(key) || (result.similarity && result.similarity > (uniqueResults.get(key)?.similarity || 0))) {
+        uniqueResults.set(key, result);
+      }
+    }
+
+    // Sort by similarity (highest first) and limit
+    const finalResults = Array.from(uniqueResults.values())
+      .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
+      .slice(0, topK);
+
+    console.log(`Retrieved ${finalResults.length} chunks (${vectorResults?.length || 0} from vector, ${keywordResults.length} from keywords)`);
+    
+    return finalResults;
   } catch (error) {
     console.error('Retrieval error:', error);
     return [];
