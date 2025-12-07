@@ -19,10 +19,32 @@ export default function Home() {
   const fetchDocuments = async () => {
     try {
       const response = await fetch('/api/upload?userId=anonymous');
+      
+      if (!response.ok) {
+        // If response is not OK, try to get error message
+        let errorMessage = `Server error: ${response.status}`;
+        try {
+          const errorText = await response.text();
+          try {
+            const errorData = JSON.parse(errorText);
+            errorMessage = errorData.error || errorMessage;
+          } catch {
+            // If it's HTML (error page), just use status
+            errorMessage = `Server error: ${response.status} ${response.statusText}`;
+          }
+        } catch {
+          errorMessage = `Server error: ${response.status} ${response.statusText}`;
+        }
+        console.error('Failed to fetch documents:', errorMessage);
+        setDocuments([]);
+        return;
+      }
+      
       const data = await response.json();
       setDocuments(data.documents || []);
     } catch (error) {
       console.error('Failed to fetch documents:', error);
+      setDocuments([]);
     } finally {
       setLoading(false);
     }

@@ -3,6 +3,10 @@ import { supabaseAdmin } from '@/lib/supabase/client';
 import { generateEmbeddings } from '@/lib/openai/embeddings';
 import { chunkText, extractTextFromFile, isBinaryFileType, getFileTypeFromName } from '@/utils/text-chunking';
 
+// Configure route runtime
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
