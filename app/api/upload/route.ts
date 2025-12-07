@@ -18,17 +18,61 @@ export async function POST(request: NextRequest) {
 
     console.log('Upload started:', { filename: file.name, size: file.size, type: file.type });
 
+    const fileType = file.type || getFileTypeFromName(file.name);
+    const fileBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(fileBuffer);
+
+    // Sanitize filename for storage (URL-safe, preserve extension)
+    const sanitizeFilename = (filename: string): string => {
+      // Get file extension
+      const lastDot = filename.lastIndexOf('.');
+      const name = lastDot > 0 ? filename.substring(0, lastDot) : filename;
+      const ext = lastDot > 0 ? filename.substring(lastDot) : '';
+      
+      // Replace non-ASCII and special characters with underscores
+      // Keep alphanumeric, dots, hyphens, and underscores
+      const sanitized = name
+        .normalize('NFD') // Decompose characters (e.g., é -> e + ´)
+        .replace(/[\u0300-\u036f]/g, '') // Remove diacritics
+        .replace(/[^a-zA-Z0-9._-]/g, '_') // Replace invalid chars with underscore
+        .replace(/_{2,}/g, '_') // Replace multiple underscores with single
+        .replace(/^_+|_+$/g, ''); // Remove leading/trailing underscores
+      
+      // Ensure we have at least some name (fallback to 'file')
+      const finalName = sanitized || 'file';
+      
+      return `${finalName}${ext}`;
+    };
+
+    const sanitizedFilename = sanitizeFilename(file.name);
+    const storagePath = `${userId}/${Date.now()}-${sanitizedFilename}`;
+    console.log('Uploading file to storage:', storagePath, '(original:', file.name, ')');
+    
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from('documents')
+      .upload(storagePath, buffer, {
+        contentType: fileType,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      console.error('Error uploading file to storage:', uploadError);
+      return NextResponse.json(
+        { error: `Failed to upload file: ${uploadError.message}` },
+        { status: 500 }
+      );
+    }
+    console.log('File uploaded to storage successfully');
+
     // Read file content - handle binary files
     let extractedText: string;
-    const fileType = file.type || getFileTypeFromName(file.name);
     
     try {
       if (isBinaryFileType(fileType)) {
-        const arrayBuffer = await file.arrayBuffer();
-        console.log('Extracting text from binary file, buffer size:', arrayBuffer.byteLength);
-        extractedText = await extractTextFromFile(arrayBuffer, fileType, file.name);
+        console.log('Extracting text from binary file, buffer size:', buffer.byteLength);
+        extractedText = await extractTextFromFile(fileBuffer, fileType, file.name);
       } else {
-        const fileContent = await file.text();
+        const fileContent = buffer.toString('utf-8');
         console.log('Extracting text from text file, content length:', fileContent.length);
         extractedText = await extractTextFromFile(fileContent, fileType, file.name);
       }
@@ -41,6 +85,8 @@ export async function POST(request: NextRequest) {
         filename: file.name,
         fileType,
       });
+      // Clean up uploaded file if text extraction fails
+      await supabaseAdmin.storage.from('documents').remove([storagePath]);
       return NextResponse.json(
         { error: `Failed to extract text: ${extractError?.message || 'Unknown error'}` },
         { status: 500 }
@@ -55,7 +101,7 @@ export async function POST(request: NextRequest) {
         user_id: userId,
         name: file.name,
         filename: file.name,
-        file_path: `/uploads/${userId}/${file.name}`,
+        file_path: storagePath,
         content: extractedText,
         file_type: fileType,
         file_size: file.size,
@@ -105,8 +151,9 @@ export async function POST(request: NextRequest) {
 
     if (chunkError) {
       console.error('Error inserting chunks:', chunkError);
-      // Clean up document if chunks fail
+      // Clean up document and storage file if chunks fail
       await supabaseAdmin.from('documents').delete().eq('id', document.id);
+      await supabaseAdmin.storage.from('documents').remove([document.file_path]);
       return NextResponse.json(
         { error: `Failed to process document chunks: ${chunkError?.message || 'Unknown error'}` },
         { status: 500 }
@@ -139,7 +186,43 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId') || 'anonymous';
+    const documentId = searchParams.get('documentId');
 
+    // If documentId is provided, fetch a single document with content and signed URL
+    if (documentId) {
+      const { data: document, error } = await supabaseAdmin
+        .from('documents')
+        .select('id, filename, file_type, file_size, created_at, content, file_path')
+        .eq('id', documentId)
+        .eq('user_id', userId)
+        .single();
+
+      if (error || !document) {
+        console.error('Error fetching document:', error);
+        return NextResponse.json(
+          { error: 'Failed to fetch document' },
+          { status: 500 }
+        );
+      }
+
+      // Generate signed URL for file access (valid for 1 hour)
+      let fileUrl = null;
+      if (document.file_path) {
+        const { data: urlData } = await supabaseAdmin.storage
+          .from('documents')
+          .createSignedUrl(document.file_path, 3600);
+        fileUrl = urlData?.signedUrl || null;
+      }
+
+      return NextResponse.json({ 
+        document: {
+          ...document,
+          file_url: fileUrl
+        }
+      });
+    }
+
+    // Otherwise, fetch all documents (without content for performance)
     const { data: documents, error } = await supabaseAdmin
       .from('documents')
       .select('id, filename, file_type, file_size, created_at')
@@ -176,11 +259,25 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    // Get document to find file path before deletion
+    const { data: document } = await supabaseAdmin
+      .from('documents')
+      .select('file_path')
+      .eq('id', documentId)
+      .single();
+
     // Delete chunks first (foreign key constraint)
     await supabaseAdmin
       .from('document_chunks')
       .delete()
       .eq('document_id', documentId);
+
+    // Delete file from storage if it exists
+    if (document?.file_path) {
+      await supabaseAdmin.storage
+        .from('documents')
+        .remove([document.file_path]);
+    }
 
     // Delete document
     const { error } = await supabaseAdmin

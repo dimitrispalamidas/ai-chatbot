@@ -93,6 +93,24 @@ export default function DocumentUploader({ documents, onUploadComplete }: Docume
     }
   };
 
+  const handleView = async (doc: Document) => {
+    try {
+      // URL encode the filename to preserve special characters
+      // This way the PDF viewer will see the correct filename in the URL
+      const encodedFilename = encodeURIComponent(doc.filename);
+      
+      // Use download endpoint with encoded filename in path
+      // The PDF viewer will extract the filename from the URL
+      const downloadUrl = `/api/download/${encodedFilename}?documentId=${doc.id}&userId=anonymous`;
+      
+      // Open in new tab - PDF viewer will show the decoded filename
+      window.open(downloadUrl, '_blank');
+    } catch (err) {
+      setError('Failed to open document');
+    }
+  };
+
+
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -174,9 +192,9 @@ export default function DocumentUploader({ documents, onUploadComplete }: Docume
             {documents.map((doc) => (
               <div
                 key={doc.id}
-                className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800"
+                className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors"
               >
-                <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
                       {doc.filename}
@@ -185,25 +203,53 @@ export default function DocumentUploader({ documents, onUploadComplete }: Docume
                       {formatFileSize(doc.file_size)} • {formatDate(doc.created_at)}
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleDelete(doc.id)}
-                    disabled={deleting === doc.id}
-                    className="ml-2 text-red-600 hover:text-red-700 disabled:opacity-50"
-                  >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => handleView(doc)}
+                      className="p-1.5 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                      title="View document"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                      />
-                    </svg>
-                  </button>
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                        />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                        />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleDelete(doc.id)}
+                      disabled={deleting === doc.id}
+                      className="p-1.5 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 rounded disabled:opacity-50 transition-colors"
+                      title="Delete document"
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

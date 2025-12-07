@@ -1,4 +1,4 @@
-import mammoth from 'mammoth';
+import * as mammoth from 'mammoth';
 import { PDFParse } from 'pdf-parse';
 
 export interface TextChunk {
